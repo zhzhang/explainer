@@ -7,10 +7,18 @@ export interface ExplainerBlock {
   text: string;
 }
 
+export interface ClaudeAttempt {
+  attempt: number;
+  output: string;
+  validationIssues: string[];
+  durationMs: number;
+}
+
 export interface InvokeClaudeResult {
   forkedSessionId: string | null;
-  output: string;
-  durationMs: number;
+  attempts: ClaudeAttempt[];
+  validated: boolean;
+  totalDurationMs: number;
 }
 
 export interface DiffResult {

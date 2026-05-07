@@ -32,25 +32,15 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
-@keyframes pulseHighlight {
-  0%,
-  100% {
-    box-shadow: inset 0 0 0 2px rgba(91, 141, 239, 0.55);
-    background-color: rgba(91, 141, 239, 0.12);
-  }
-  50% {
-    box-shadow: inset 0 0 0 2px rgba(91, 141, 239, 0.9);
-    background-color: rgba(91, 141, 239, 0.22);
-  }
-}
-
 .diff-line {
+  position: relative;
   display: grid;
   grid-template-columns: 56px 1fr;
   font-family: var(--font-geist-mono), ui-monospace, Menlo, Monaco, monospace;
   font-size: 12px;
   line-height: 18px;
   white-space: pre;
+  transition: background-color 120ms ease;
 }
 
 .diff-line .gutter {
@@ -86,8 +76,34 @@ body {
   background: var(--ctx);
 }
 
-.diff-line.active-highlight {
-  animation: pulseHighlight 2s ease-in-out infinite;
+.diff-line.active-highlight::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 0;
+  border-left: 3px solid var(--hl-stripe, #5b8def);
+  background: var(--hl-overlay, rgba(91, 141, 239, 0.05));
+  pointer-events: none;
+}
+
+.diff-line.add.active-highlight {
+  --hl-stripe: var(--add-fg);
+  --hl-overlay: rgba(46, 160, 67, 0.08);
+}
+.diff-line.del.active-highlight {
+  --hl-stripe: var(--del-fg);
+  --hl-overlay: rgba(248, 81, 73, 0.08);
+}
+.diff-line.ctx.active-highlight {
+  --hl-stripe: #6b7a90;
+  --hl-overlay: rgba(120, 140, 170, 0.07);
+}
+.diff-line.empty.active-highlight {
+  --hl-stripe: transparent;
+  --hl-overlay: transparent;
+}
+
+.diff-line.active-highlight .gutter {
+  color: #d4d4dc;
 }
 
 .diff-hunk-header {

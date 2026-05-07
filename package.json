@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cache:clear": "curl -s -X DELETE http://localhost:3000/api/dev/clear-tts-cache | jq ."
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.46.0",
@@ -14,7 +15,8 @@
     "js-yaml": "^4.1.1",
     "next": "16.2.5",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

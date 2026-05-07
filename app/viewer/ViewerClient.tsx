@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { invokeClaude } from "../actions";
 import DiffViewer from "../components/DiffViewer";
 import PlaybackControls from "../components/PlaybackControls";
 import ExplainerOverlay from "../components/ExplainerOverlay";
+import {
+  classifyHighlight,
+  fileMatches,
+  parseDiffToSideBySide,
+} from "../lib/parseDiff";
 import type { ExplainerBlock } from "../types";
 
 interface ViewerClientProps {
@@ -45,6 +50,14 @@ export default function ViewerClient({
   }, [repo, fork, router]);
 
   const activeBlock = blocks[currentIndex] ?? null;
+
+  const parsedFiles = useMemo(() => parseDiffToSideBySide(rawDiff), [rawDiff]);
+
+  const activeKind = useMemo(() => {
+    if (!activeBlock) return null;
+    const file = parsedFiles.find((f) => fileMatches(f, activeBlock.file));
+    return classifyHighlight(file, activeBlock);
+  }, [parsedFiles, activeBlock]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -92,6 +105,7 @@ export default function ViewerClient({
         block={activeBlock}
         index={currentIndex}
         total={blocks.length}
+        kind={activeKind}
       />
 
       <PlaybackControls

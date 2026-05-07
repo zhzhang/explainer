@@ -157,3 +157,21 @@ export function fileMatches(parsed: ParsedFile, target: string): boolean {
     t.endsWith("/" + normalizePath(parsed.displayName))
   );
 }
+
+export type HighlightKind = "change" | "context" | "missing";
+
+export function classifyHighlight(
+  file: ParsedFile | undefined,
+  range: { line_start: number; line_end: number },
+): HighlightKind {
+  if (!file) return "missing";
+  for (const row of file.rows) {
+    if (row.hunkHeader) continue;
+    const ln = row.right.lineNumber;
+    if (ln == null) continue;
+    if (ln >= range.line_start && ln <= range.line_end) {
+      if (row.right.kind === "add") return "change";
+    }
+  }
+  return "context";
+}

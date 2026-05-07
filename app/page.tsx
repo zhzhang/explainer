@@ -15,12 +15,16 @@ export default function LandingPage() {
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setStatus("Asking Claude to produce explainer.yaml…");
+    setStatus(
+      "Asking Claude to produce explainer.yaml (validating + retrying as needed)…",
+    );
     setIsWorking(true);
     try {
       const result = await invokeClaude(repoPath.trim(), sessionId.trim());
+      const totalSec = (result.totalDurationMs / 1000).toFixed(1);
+      const attemptCount = result.attempts.length;
       setStatus(
-        `Claude finished in ${(result.durationMs / 1000).toFixed(1)}s. Loading viewer…`,
+        `Validated explainer.yaml after ${attemptCount} attempt${attemptCount === 1 ? "" : "s"} in ${totalSec}s. Loading viewer…`,
       );
       const params = new URLSearchParams({ repo: repoPath.trim() });
       if (result.forkedSessionId) {
