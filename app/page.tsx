@@ -49,7 +49,7 @@ export default function LandingPage() {
       <div className="w-full max-w-xl">
         <header className="mb-10">
           <h1 className="text-4xl font-semibold tracking-tight mb-2">
-            <span className="text-[var(--accent)]">Sierra</span>
+            <span className="text-[var(--accent)]">diff-explainer</span>
           </h1>
           <p className="text-[var(--muted)] text-sm leading-relaxed">
             Point at a local repository and replay an AI-generated walkthrough
@@ -104,8 +104,8 @@ export default function LandingPage() {
               className="w-full px-3 py-2.5 bg-[#0a0a0c] border border-[var(--border)] rounded-md text-sm font-mono text-[#e8e8ee] placeholder-[#4a4a52] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] transition-colors"
             />
             <p className="mt-1.5 text-[11px] text-[var(--muted)]">
-              The session that just produced your code changes. Sierra will
-              fork it so the original is untouched.
+              The session that just produced your code changes. diff-explainer
+              will fork it so the original is untouched.
             </p>
           </div>
 

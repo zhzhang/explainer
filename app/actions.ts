@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
 const DEFAULT_VOICE_ID =
-  process.env.ELEVENLABS_VOICE_ID ?? "JBFqnCBsd6RMkjVDRZzb";
+  process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM";
 const DEFAULT_MODEL_ID = "eleven_flash_v2_5";
 
 async function assertRepoPath(repoPath: string): Promise<string> {

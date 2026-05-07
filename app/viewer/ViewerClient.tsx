@@ -54,7 +54,7 @@ export default function ViewerClient({
             href="/"
             className="text-[var(--accent)] font-semibold text-lg shrink-0"
           >
-            Sierra
+            diff-explainer
           </Link>
           <span className="text-[var(--muted)] text-xs shrink-0">/</span>
           <span className="text-sm font-mono text-[#e8e8ee] truncate">
