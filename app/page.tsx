@@ -2,41 +2,28 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { invokeClaude } from "./actions";
 
 export default function LandingPage() {
   const router = useRouter();
   const [repoPath, setRepoPath] = useState("");
   const [sessionId, setSessionId] = useState("");
-  const [isWorking, setIsWorking] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleGenerate(e: React.FormEvent) {
+  function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setStatus(
-      "Asking Claude to produce explainer.yaml (validating + retrying as needed)…",
-    );
-    setIsWorking(true);
-    try {
-      const result = await invokeClaude(repoPath.trim(), sessionId.trim());
-      const totalSec = (result.totalDurationMs / 1000).toFixed(1);
-      const attemptCount = result.attempts.length;
-      setStatus(
-        `Validated explainer.yaml after ${attemptCount} attempt${attemptCount === 1 ? "" : "s"} in ${totalSec}s. Loading viewer…`,
-      );
-      const params = new URLSearchParams({ repo: repoPath.trim() });
-      if (result.forkedSessionId) {
-        params.set("fork", result.forkedSessionId);
-      }
-      router.push(`/viewer?${params.toString()}`);
-    } catch (err) {
-      setError((err as Error).message);
-      setStatus(null);
-    } finally {
-      setIsWorking(false);
+    const repo = repoPath.trim();
+    const session = sessionId.trim();
+    if (!repo || !session) {
+      setError("Enter repo path and Claude session ID");
+      return;
     }
+    const params = new URLSearchParams({
+      repo,
+      generate: "1",
+      sessionId: session,
+    });
+    router.push(`/viewer?${params.toString()}`);
   }
 
   function handleSkipClaude() {
@@ -81,7 +68,6 @@ export default function LandingPage() {
               placeholder="/Users/you/projects/your-repo"
               value={repoPath}
               onChange={(e) => setRepoPath(e.target.value)}
-              disabled={isWorking}
               className="w-full px-3 py-2.5 bg-[#0a0a0c] border border-[var(--border)] rounded-md text-sm font-mono text-[#e8e8ee] placeholder-[#4a4a52] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] transition-colors"
             />
             <p className="mt-1.5 text-[11px] text-[var(--muted)]">
@@ -104,12 +90,12 @@ export default function LandingPage() {
               placeholder="e.g. 550e8400-e29b-41d4-a716-446655440000"
               value={sessionId}
               onChange={(e) => setSessionId(e.target.value)}
-              disabled={isWorking}
               className="w-full px-3 py-2.5 bg-[#0a0a0c] border border-[var(--border)] rounded-md text-sm font-mono text-[#e8e8ee] placeholder-[#4a4a52] focus:outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-dim)] transition-colors"
             />
             <p className="mt-1.5 text-[11px] text-[var(--muted)]">
               The session that just produced your code changes. diff-explainer
-              will fork it so the original is untouched.
+              will fork it so the original is untouched. The viewer opens
+              immediately and streams blocks as they are written.
             </p>
           </div>
 
@@ -119,26 +105,18 @@ export default function LandingPage() {
             </div>
           ) : null}
 
-          {status ? (
-            <div className="text-xs text-[var(--accent)] bg-[var(--accent-dim)] border border-[var(--accent-dim)] rounded p-3 flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse" />
-              {status}
-            </div>
-          ) : null}
-
           <div className="flex gap-3 pt-2">
             <button
               type="submit"
-              disabled={isWorking || !repoPath.trim() || !sessionId.trim()}
+              disabled={!repoPath.trim() || !sessionId.trim()}
               className="flex-1 h-11 rounded-full bg-[var(--accent)] text-black font-semibold text-sm hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100 transition-transform"
             >
-              {isWorking ? "Generating…" : "Generate explainer"}
+              Generate explainer
             </button>
             <button
               type="button"
               onClick={handleSkipClaude}
-              disabled={isWorking}
-              className="h-11 px-5 rounded-full border border-[var(--border)] text-sm text-[#e8e8ee] hover:border-[#3a3a41] disabled:opacity-40 transition-colors"
+              className="h-11 px-5 rounded-full border border-[var(--border)] text-sm text-[#e8e8ee] hover:border-[#3a3a41] transition-colors"
               title="Skip Claude — open the viewer using whatever explainer.yaml is already in the repo"
             >
               Open existing

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { synthesizeSpeech } from "../actions";
 import type { ExplainerBlock, ExplainerSubBlock } from "../types";
 import MicIndicator from "./MicIndicator";
 
@@ -13,13 +12,27 @@ interface PlaybackControlsProps {
   onSubIndexChange: (index: number) => void;
 }
 
-function base64ToBlobUrl(base64: string, mimeType: string): string {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+/**
+ * Fetches a single TTS clip from the route handler. Plain `fetch` is used
+ * (rather than a server action) so audio requests aren't queued behind the
+ * long-running `invokeClaude` server action while generation is in flight.
+ */
+async function fetchAudioBlobUrl(text: string): Promise<string> {
+  const res = await fetch("/api/tts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    let message = `TTS request failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { error?: string };
+      if (data?.error) message = data.error;
+    } catch {}
+    throw new Error(message);
   }
-  const blob = new Blob([bytes], { type: mimeType });
+  const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
 
@@ -62,8 +75,7 @@ export default function PlaybackControls({
       const cached = audioCache.current.get(index);
       if (cached) return cached;
       try {
-        const { audioBase64, mimeType } = await synthesizeSpeech(block.text);
-        const url = base64ToBlobUrl(audioBase64, mimeType);
+        const url = await fetchAudioBlobUrl(block.text);
         audioCache.current.set(index, url);
         return url;
       } catch {
@@ -82,8 +94,7 @@ export default function PlaybackControls({
       setIsLoading(true);
       setError(null);
       try {
-        const { audioBase64, mimeType } = await synthesizeSpeech(block.text);
-        const url = base64ToBlobUrl(audioBase64, mimeType);
+        const url = await fetchAudioBlobUrl(block.text);
         audioCache.current.set(index, url);
         return url;
       } catch (err) {

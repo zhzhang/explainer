@@ -162,15 +162,24 @@ export type HighlightKind = "change" | "context" | "missing";
 
 export function classifyHighlight(
   file: ParsedFile | undefined,
-  range: { line_start: number; line_end: number },
+  range: { line_start: number; line_end: number; part?: "before" | "after" },
 ): HighlightKind {
   if (!file) return "missing";
+  const part = range.part ?? "after";
   for (const row of file.rows) {
     if (row.hunkHeader) continue;
-    const ln = row.right.lineNumber;
-    if (ln == null) continue;
-    if (ln >= range.line_start && ln <= range.line_end) {
-      if (row.right.kind === "add") return "change";
+    if (part === "before") {
+      const ln = row.left.lineNumber;
+      if (ln == null) continue;
+      if (ln >= range.line_start && ln <= range.line_end) {
+        if (row.left.kind === "del") return "change";
+      }
+    } else {
+      const ln = row.right.lineNumber;
+      if (ln == null) continue;
+      if (ln >= range.line_start && ln <= range.line_end) {
+        if (row.right.kind === "add") return "change";
+      }
     }
   }
   return "context";

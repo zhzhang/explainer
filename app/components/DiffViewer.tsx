@@ -7,11 +7,11 @@ import {
   type ParsedFile,
   type SideLine,
 } from "../lib/parseDiff";
-import type { ExplainerBlock } from "../types";
+import type { ExplainerSubBlock } from "../types";
 
 interface DiffViewerProps {
   rawDiff: string;
-  activeBlock: ExplainerBlock | null;
+  activeSubBlock: ExplainerSubBlock | null;
 }
 
 function lineClass(kind: SideLine["kind"]) {
@@ -30,14 +30,14 @@ function lineClass(kind: SideLine["kind"]) {
 interface FileBlockProps {
   file: ParsedFile;
   fileIndex: number;
-  activeBlock: ExplainerBlock | null;
+  activeSubBlock: ExplainerSubBlock | null;
   isActiveFile: boolean;
 }
 
 const FileBlock = memo(function FileBlock({
   file,
   fileIndex,
-  activeBlock,
+  activeSubBlock,
   isActiveFile,
 }: FileBlockProps) {
   const status = file.isNew
@@ -48,18 +48,30 @@ const FileBlock = memo(function FileBlock({
         ? "renamed"
         : "modified";
 
+  const activePart = activeSubBlock?.part ?? "after";
+
   const isActiveOnRight = (lineNumber: number | null) => {
-    if (!isActiveFile || !activeBlock || lineNumber == null) return false;
+    if (!isActiveFile || !activeSubBlock || lineNumber == null) return false;
+    if (activePart !== "after") return false;
     return (
-      lineNumber >= activeBlock.line_start && lineNumber <= activeBlock.line_end
+      lineNumber >= activeSubBlock.line_start &&
+      lineNumber <= activeSubBlock.line_end
     );
   };
 
   const isActiveOnLeft = (lineNumber: number | null) => {
-    if (!isActiveFile || !activeBlock || lineNumber == null) return false;
+    if (!isActiveFile || !activeSubBlock || lineNumber == null) return false;
+    if (activePart === "before") {
+      return (
+        lineNumber >= activeSubBlock.line_start &&
+        lineNumber <= activeSubBlock.line_end
+      );
+    }
+    // Legacy fallback for fully-deleted files referenced with part:after.
     if (!file.isDeleted) return false;
     return (
-      lineNumber >= activeBlock.line_start && lineNumber <= activeBlock.line_end
+      lineNumber >= activeSubBlock.line_start &&
+      lineNumber <= activeSubBlock.line_end
     );
   };
 
@@ -102,6 +114,9 @@ const FileBlock = memo(function FileBlock({
                   }`}
                   data-side="left"
                   data-line={row.left.lineNumber ?? ""}
+                  data-active={
+                    isActiveOnLeft(row.left.lineNumber) ? "true" : "false"
+                  }
                 >
                   <div className="gutter">{row.left.lineNumber ?? ""}</div>
                   <div className="code">{row.left.content || "\u00A0"}</div>
@@ -141,23 +156,27 @@ const FileBlock = memo(function FileBlock({
   );
 });
 
-export default function DiffViewer({ rawDiff, activeBlock }: DiffViewerProps) {
+export default function DiffViewer({
+  rawDiff,
+  activeSubBlock,
+}: DiffViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const files = useMemo(() => parseDiffToSideBySide(rawDiff), [rawDiff]);
 
   const activeFileIndex = useMemo(() => {
-    if (!activeBlock) return -1;
-    return files.findIndex((f) => fileMatches(f, activeBlock.file));
-  }, [files, activeBlock]);
+    if (!activeSubBlock) return -1;
+    return files.findIndex((f) => fileMatches(f, activeSubBlock.file));
+  }, [files, activeSubBlock]);
 
   useEffect(() => {
-    if (!activeBlock || !containerRef.current) return;
+    if (!activeSubBlock || !containerRef.current) return;
     const root = containerRef.current;
+    const side = activeSubBlock.part === "before" ? "left" : "right";
     const targetSelector =
       activeFileIndex >= 0
-        ? `[data-file-index="${activeFileIndex}"] [data-side="right"][data-active="true"]`
-        : `[data-side="right"][data-active="true"]`;
+        ? `[data-file-index="${activeFileIndex}"] [data-side="${side}"][data-active="true"]`
+        : `[data-side="${side}"][data-active="true"]`;
     const firstActive = root.querySelector<HTMLElement>(targetSelector);
     if (firstActive) {
       firstActive.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -167,7 +186,7 @@ export default function DiffViewer({ rawDiff, activeBlock }: DiffViewerProps) {
       );
       fileEl?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [activeBlock, activeFileIndex]);
+  }, [activeSubBlock, activeFileIndex]);
 
   if (files.length === 0) {
     return (
@@ -184,7 +203,7 @@ export default function DiffViewer({ rawDiff, activeBlock }: DiffViewerProps) {
           key={`${file.displayName}-${idx}`}
           file={file}
           fileIndex={idx}
-          activeBlock={activeBlock}
+          activeSubBlock={activeSubBlock}
           isActiveFile={idx === activeFileIndex}
         />
       ))}
