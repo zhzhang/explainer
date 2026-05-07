@@ -34,6 +34,7 @@ export function useMicrophoneLevel(): UseMicrophoneLevelResult {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number | null>(null);
+  const wantsActiveRef = useRef(false);
 
   const teardown = useCallback(() => {
     if (rafRef.current !== null) {
@@ -56,12 +57,14 @@ export function useMicrophoneLevel(): UseMicrophoneLevelResult {
   }, []);
 
   const stop = useCallback(() => {
+    wantsActiveRef.current = false;
     teardown();
     setIsActive(false);
     setLevel(0);
   }, [teardown]);
 
   const start = useCallback(async () => {
+    wantsActiveRef.current = true;
     if (isActive || isStarting) return;
     if (
       typeof navigator === "undefined" ||
@@ -82,6 +85,13 @@ export function useMicrophoneLevel(): UseMicrophoneLevelResult {
           autoGainControl: true,
         },
       });
+
+      // The user may have released the PTT key while we were waiting for
+      // permission. Abort cleanly without ever flipping `isActive`.
+      if (!wantsActiveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
 
       const win = window as WindowWithWebkitAudio;
       const AudioCtor = window.AudioContext ?? win.webkitAudioContext;

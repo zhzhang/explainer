@@ -1,11 +1,101 @@
 "use client";
 
+import { useCallback, useEffect, useRef } from "react";
 import { useMicrophoneLevel } from "../lib/useMicrophoneLevel";
 
 const NUM_BARS = 5;
+// The "tilde" key — same physical key as backtick on US keyboards. Using
+// `event.code` so it works regardless of whether Shift is held.
+const PTT_KEY_CODE = "Backquote";
+
+type PressSource = "key" | "pointer";
 
 export default function MicIndicator() {
-  const { isActive, isStarting, level, error, toggle } = useMicrophoneLevel();
+  const { isActive, isStarting, level, error, start, stop } =
+    useMicrophoneLevel();
+
+  // Track every input that is currently asking for the mic to be live.
+  // The mic stays open until *all* sources are released.
+  const heldSources = useRef<Set<PressSource>>(new Set());
+
+  const press = useCallback(
+    (source: PressSource) => {
+      if (heldSources.current.has(source)) return;
+      heldSources.current.add(source);
+      void start();
+    },
+    [start],
+  );
+
+  const release = useCallback(
+    (source: PressSource) => {
+      if (!heldSources.current.delete(source)) return;
+      if (heldSources.current.size === 0) {
+        stop();
+      }
+    },
+    [stop],
+  );
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      if (target.isContentEditable) return true;
+      const tag = target.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== PTT_KEY_CODE) return;
+      if (isTypingTarget(e.target)) return;
+      // Suppress key auto-repeat — we only care about the initial press.
+      if (e.repeat) return;
+      e.preventDefault();
+      press("key");
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== PTT_KEY_CODE) return;
+      if (!heldSources.current.has("key")) return;
+      e.preventDefault();
+      release("key");
+    };
+
+    const onWindowBlur = () => {
+      if (heldSources.current.size === 0) return;
+      heldSources.current.clear();
+      stop();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [press, release, stop]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    press("pointer");
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    release("pointer");
+  };
+
+  const onPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    release("pointer");
+  };
 
   // Boost the perceived range so quiet speech still moves the meter.
   const normalized = Math.min(1, Math.max(0, level * 4));
@@ -17,8 +107,8 @@ export default function MicIndicator() {
     : isStarting
       ? "Requesting microphone…"
       : isActive
-        ? "Microphone on — click to mute"
-        : "Microphone off — click to enable";
+        ? "Listening — release ` to stop"
+        : "Hold ` (tilde) or this button to talk";
 
   return (
     <div className="flex items-center gap-2" title={buttonTitle}>
@@ -48,16 +138,19 @@ export default function MicIndicator() {
       </div>
       <button
         type="button"
-        onClick={toggle}
-        disabled={isStarting}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onContextMenu={(e) => e.preventDefault()}
         aria-pressed={isActive}
-        aria-label={
-          isActive ? "Turn microphone off" : "Turn microphone on"
-        }
-        className={`relative w-9 h-9 flex items-center justify-center rounded-full border transition-colors disabled:opacity-40 ${
+        aria-keyshortcuts="`"
+        aria-label="Push to talk (hold tilde or this button)"
+        className={`relative w-9 h-9 flex items-center justify-center rounded-full border transition-colors select-none touch-none ${
           isActive
             ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-            : "border-[var(--border)] text-[#cfcfd6] hover:text-white hover:border-[#3a3a41]"
+            : isStarting
+              ? "border-[var(--accent)] text-[var(--accent)]"
+              : "border-[var(--border)] text-[#cfcfd6] hover:text-white hover:border-[#3a3a41]"
         }`}
       >
         {isActive ? (
@@ -95,6 +188,16 @@ export default function MicIndicator() {
           />
         ) : null}
       </button>
+      <kbd
+        className={`hidden sm:inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded border text-[10px] font-mono leading-none transition-colors ${
+          isActive
+            ? "border-[var(--accent)] text-[var(--accent)]"
+            : "border-[var(--border)] text-[var(--muted)]"
+        }`}
+        aria-hidden="true"
+      >
+        `
+      </kbd>
     </div>
   );
 }

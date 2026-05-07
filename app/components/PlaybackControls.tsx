@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { synthesizeSpeech } from "../actions";
-import type { ExplainerBlock } from "../types";
+import type { ExplainerBlock, ExplainerSubBlock } from "../types";
 import MicIndicator from "./MicIndicator";
 
 interface PlaybackControlsProps {
-  blocks: ExplainerBlock[];
-  currentIndex: number;
-  onIndexChange: (index: number) => void;
+  groups: ExplainerBlock[];
+  subBlocks: ExplainerSubBlock[];
+  groupStarts: number[];
+  currentSubIndex: number;
+  onSubIndexChange: (index: number) => void;
 }
 
 function base64ToBlobUrl(base64: string, mimeType: string): string {
@@ -22,9 +24,11 @@ function base64ToBlobUrl(base64: string, mimeType: string): string {
 }
 
 export default function PlaybackControls({
-  blocks,
-  currentIndex,
-  onIndexChange,
+  groups,
+  subBlocks,
+  groupStarts,
+  currentSubIndex,
+  onSubIndexChange,
 }: PlaybackControlsProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,12 +39,25 @@ export default function PlaybackControls({
   const audioCache = useRef<Map<number, string>>(new Map());
   const wantToPlay = useRef(false);
 
-  const total = blocks.length;
-  const currentBlock = blocks[currentIndex];
+  const totalSubs = subBlocks.length;
+  const currentBlock = subBlocks[currentSubIndex];
+
+  const groupIndex = useMemo(() => {
+    if (totalSubs === 0) return 0;
+    for (let g = groups.length - 1; g >= 0; g--) {
+      const start = groupStarts[g] ?? 0;
+      if (currentSubIndex >= start) return g;
+    }
+    return 0;
+  }, [groups.length, groupStarts, currentSubIndex, totalSubs]);
+
+  const subIndexInGroup =
+    totalSubs > 0 ? currentSubIndex - (groupStarts[groupIndex] ?? 0) : 0;
+  const subsInCurrentGroup = groups[groupIndex]?.length ?? 0;
 
   const prefetchAudio = useCallback(
     async (index: number): Promise<string | null> => {
-      const block = blocks[index];
+      const block = subBlocks[index];
       if (!block) return null;
       const cached = audioCache.current.get(index);
       if (cached) return cached;
@@ -53,14 +70,14 @@ export default function PlaybackControls({
         return null;
       }
     },
-    [blocks],
+    [subBlocks],
   );
 
   const loadAudio = useCallback(
     async (index: number): Promise<string | null> => {
       const cached = audioCache.current.get(index);
       if (cached) return cached;
-      const block = blocks[index];
+      const block = subBlocks[index];
       if (!block) return null;
       setIsLoading(true);
       setError(null);
@@ -76,7 +93,7 @@ export default function PlaybackControls({
         setIsLoading(false);
       }
     },
-    [blocks],
+    [subBlocks],
   );
 
   useEffect(() => {
@@ -99,7 +116,7 @@ export default function PlaybackControls({
     setDuration(0);
 
     (async () => {
-      const url = await loadAudio(currentIndex);
+      const url = await loadAudio(currentSubIndex);
       if (cancelled || !url || !audioRef.current) return;
       audioRef.current.src = url;
       audioRef.current.load();
@@ -109,15 +126,15 @@ export default function PlaybackControls({
         } catch {
         }
       }
-      if (blocks[currentIndex + 1]) {
-        void prefetchAudio(currentIndex + 1);
+      if (subBlocks[currentSubIndex + 1]) {
+        void prefetchAudio(currentSubIndex + 1);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [currentIndex, currentBlock, blocks, loadAudio, prefetchAudio]);
+  }, [currentSubIndex, currentBlock, subBlocks, loadAudio, prefetchAudio]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -126,9 +143,9 @@ export default function PlaybackControls({
     const onMeta = () => setDuration(audio.duration || 0);
     const onEnd = () => {
       setIsPlaying(false);
-      if (currentIndex < total - 1) {
+      if (currentSubIndex < totalSubs - 1) {
         wantToPlay.current = true;
-        onIndexChange(currentIndex + 1);
+        onSubIndexChange(currentSubIndex + 1);
       }
     };
     const onPlay = () => setIsPlaying(true);
@@ -145,7 +162,7 @@ export default function PlaybackControls({
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
     };
-  }, [currentIndex, total, onIndexChange]);
+  }, [currentSubIndex, totalSubs, onSubIndexChange]);
 
   const togglePlay = useCallback(async () => {
     const audio = audioRef.current;
@@ -153,7 +170,7 @@ export default function PlaybackControls({
     if (audio.paused) {
       wantToPlay.current = true;
       if (!audio.src) {
-        const url = await loadAudio(currentIndex);
+        const url = await loadAudio(currentSubIndex);
         if (url) {
           audio.src = url;
           audio.load();
@@ -168,21 +185,21 @@ export default function PlaybackControls({
       wantToPlay.current = false;
       audio.pause();
     }
-  }, [currentBlock, currentIndex, loadAudio]);
+  }, [currentBlock, currentSubIndex, loadAudio]);
 
   const goPrev = useCallback(() => {
-    if (currentIndex > 0) {
+    if (currentSubIndex > 0) {
       wantToPlay.current = isPlaying;
-      onIndexChange(currentIndex - 1);
+      onSubIndexChange(currentSubIndex - 1);
     }
-  }, [currentIndex, isPlaying, onIndexChange]);
+  }, [currentSubIndex, isPlaying, onSubIndexChange]);
 
   const goNext = useCallback(() => {
-    if (currentIndex < total - 1) {
+    if (currentSubIndex < totalSubs - 1) {
       wantToPlay.current = isPlaying;
-      onIndexChange(currentIndex + 1);
+      onSubIndexChange(currentSubIndex + 1);
     }
-  }, [currentIndex, total, isPlaying, onIndexChange]);
+  }, [currentSubIndex, totalSubs, isPlaying, onSubIndexChange]);
 
   const replay = useCallback(() => {
     const audio = audioRef.current;
@@ -223,7 +240,9 @@ export default function PlaybackControls({
       <div className="max-w-7xl mx-auto px-6 py-3 grid grid-cols-3 items-center gap-4">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
-            {total > 0 ? `Block ${currentIndex + 1} of ${total}` : "No blocks"}
+            {totalSubs > 0
+              ? `Block ${groupIndex + 1} of ${groups.length} · Part ${subIndexInGroup + 1} of ${subsInCurrentGroup}`
+              : "No blocks"}
           </div>
           <div className="text-sm truncate text-[#e8e8ee]">
             {currentBlock?.file ?? "—"}
@@ -240,8 +259,8 @@ export default function PlaybackControls({
             <button
               type="button"
               onClick={goPrev}
-              disabled={currentIndex === 0}
-              aria-label="Previous block"
+              disabled={currentSubIndex === 0}
+              aria-label="Previous sub-block"
               className="w-9 h-9 flex items-center justify-center rounded-full text-[#cfcfd6] hover:text-white disabled:opacity-30 transition-colors"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -251,7 +270,7 @@ export default function PlaybackControls({
             <button
               type="button"
               onClick={replay}
-              aria-label="Replay current block"
+              aria-label="Replay current sub-block"
               className="w-9 h-9 flex items-center justify-center rounded-full text-[#cfcfd6] hover:text-white transition-colors"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -291,8 +310,8 @@ export default function PlaybackControls({
             <button
               type="button"
               onClick={goNext}
-              disabled={currentIndex >= total - 1}
-              aria-label="Next block"
+              disabled={currentSubIndex >= totalSubs - 1}
+              aria-label="Next sub-block"
               className="w-9 h-9 flex items-center justify-center rounded-full text-[#cfcfd6] hover:text-white disabled:opacity-30 transition-colors"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -327,24 +346,40 @@ export default function PlaybackControls({
 
         <div className="flex items-center justify-end gap-4">
           <div className="flex items-center gap-1.5">
-            {blocks.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => {
-                  wantToPlay.current = isPlaying;
-                  onIndexChange(i);
-                }}
-                aria-label={`Jump to block ${i + 1}`}
-                className={`w-2 h-2 rounded-full transition-all ${
-                  i === currentIndex
-                    ? "bg-[var(--accent)] w-6"
-                    : i < currentIndex
-                      ? "bg-[#4a4a52]"
-                      : "bg-[#2a2a31] hover:bg-[#3a3a41]"
-                }`}
-              />
-            ))}
+            {groups.map((g, gi) => {
+              const isActiveGroup = gi === groupIndex;
+              const gSize = g.length;
+              const innerPct = isActiveGroup
+                ? ((subIndexInGroup + 1) / gSize) * 100
+                : gi < groupIndex
+                  ? 100
+                  : 0;
+              return (
+                <button
+                  key={gi}
+                  type="button"
+                  onClick={() => {
+                    wantToPlay.current = isPlaying;
+                    onSubIndexChange(groupStarts[gi] ?? 0);
+                  }}
+                  aria-label={`Jump to block ${gi + 1}`}
+                  className={`rounded-full transition-all h-2 flex items-stretch overflow-hidden ${
+                    isActiveGroup
+                      ? "bg-[#2a2a31] w-14 border border-[var(--accent-dim)]"
+                      : gi < groupIndex
+                        ? "bg-[#4a4a52] w-2"
+                        : "bg-[#2a2a31] hover:bg-[#3a3a41] w-2"
+                  }`}
+                >
+                  {isActiveGroup ? (
+                    <span
+                      className="bg-[var(--accent)] h-full rounded-full"
+                      style={{ width: `${innerPct}%` }}
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
           <div className="h-6 w-px bg-[var(--border)]" aria-hidden="true" />
           <MicIndicator />
