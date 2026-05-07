@@ -23,6 +23,7 @@ The file MUST be a **YAML list of lists**: each **outer** item is one **block** 
 ```yaml
 - - file: <repo-relative path, forward slashes>
     part: after # optional, "before" or "after". Defaults to "after".
+    turn: agent # optional, "user" or "agent". Defaults to "agent". See "Voice Q&A" below.
     line_start: <1-indexed line where the range begins>
     col_start: <1-indexed column where the range begins, use 1 for whole lines>
     line_end: <1-indexed line where the range ends, inclusive>
@@ -68,6 +69,45 @@ Rules for `part: before`:
 - **Block** (outer list item): one coherent thought. The front end shows **all** sub-block `text` in that block together and highlights the code range for whichever sub-block is currently being narrated.
 - **Sub-block** (inner list item): one line/column range + one TTS clip. **Use multiple sub-blocks whenever the thought touches more than one range** — this is the main mechanism for connecting code that lives in different places. Use a single sub-block only when one range fully supports the idea on its own.
 
+### Voice Q&A clarifications (push-to-talk)
+
+The diff-explainer viewer can send you a **follow-up question** while the user listens: their speech is transcribed, you receive the **0-based outer block index** they were on when they pressed talk, and you must **append** new sub-blocks **inside that same block** (extend the inner list only — never add a new outer block for this flow).
+
+1. Append **one** sub-block with `turn: user` and `text` set to their question (lightly cleaned for readability is fine). Reuse **exactly** the `file`, `part`, `line_start`, `col_start`, `line_end`, and `col_end` from the **last sub-block already in that block before your edit** so the UI keeps the same code anchor while showing what they asked. The app **does not TTS** `turn: user` rows; they only appear as a “You asked” reminder.
+2. Immediately after, append **one or more** sub-blocks with `turn: agent` (or omit `turn` so it defaults to `agent`) that answer the question, following all normal `part` / line-range rules and the same `text` style constraints as any other narration.
+3. Rewrite **the entire** `explainer.yaml` from scratch (valid list-of-lists) so every other block is unchanged.
+
+Example tail of a block after a clarification (note the user row is not spoken aloud by the player):
+
+```yaml
+- - file: app/lib/validateExplainer.ts
+    part: after
+    line_start: 50
+    col_start: 1
+    line_end: 70
+    col_end: 999
+    text: |
+      Earlier narration about validation…
+  - file: app/lib/validateExplainer.ts
+    part: after
+    turn: user
+    line_start: 50
+    col_start: 1
+    line_end: 70
+    col_end: 999
+    text: |
+      Why do we reject before ranges that do not cover a deletion?
+  - file: app/lib/validateExplainer.ts
+    part: after
+    turn: agent
+    line_start: 135
+    col_start: 1
+    line_end: 170
+    col_end: 999
+    text: |
+      Because part before means old file line numbers tied to minus lines in the diff…
+```
+
 ### Narrative shape (don't walk top-to-bottom)
 
 Order ranges by **how the reader's understanding builds**, not by where they sit in the diff. The UI already shows the diff next to your audio, so a linear file walkthrough is redundant — the reader can see that for themselves.
@@ -95,6 +135,7 @@ Then plan the next block, add it, and rewrite the whole file again. Repeat until
 
 - `file` is the path relative to the repo root with forward slashes (e.g. `src/app/page.tsx`), never absolute.
 - `part` is `"before"` or `"after"`. Omit it (or write `after`) for post-change code; use `before` when the line numbers reference the pre-change file. See the **`part: before` vs `part: after`** section above.
+- `turn` is `"user"` or `"agent"`. Omit it (or write `agent`) for all normal narration. Use `turn: user` only for the listener’s transcribed question in a voice clarification; the player skips those clips. Every `user` row must be followed by at least one `agent` answer in the same block.
 - All line/column numbers are **1-indexed and inclusive** on both ends. For `part: after`, they refer to the file as it sits on disk now. For `part: before`, they refer to the OLD file as shown in the diff's left gutter.
 - For whole-line ranges, set `col_start: 1` and `col_end` to the length of the last line (or a large number like 999 if you don't know it; the app clamps to line length).
 - `text` is for spoken audio. No code blocks, no inline backticks, no markdown headings, no lists. Spell out short symbol names ("get-diff function") rather than reading punctuation.

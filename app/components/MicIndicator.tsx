@@ -1,30 +1,77 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useMicrophoneLevel } from "../lib/useMicrophoneLevel";
 
 const NUM_BARS = 5;
+
+interface MicIndicatorProps {
+  /** Block index (0-based outer list) at the moment PTT is activated. */
+  activationBlockGroupIndex: number;
+  /** Fired after release with the block index captured at activation and the recorded audio. */
+  onPttRecordingComplete?: (
+    blockIndex: number,
+    blob: Blob,
+  ) => void | Promise<void>;
+  /** When true, PTT is ignored (e.g. long-running clarification). */
+  disabled?: boolean;
+}
+
 // The "tilde" key — same physical key as backtick on US keyboards. Using
 // `event.code` so it works regardless of whether Shift is held.
 const PTT_KEY_CODE = "Backquote";
 
 type PressSource = "key" | "pointer";
 
-export default function MicIndicator() {
+export default function MicIndicator({
+  activationBlockGroupIndex,
+  onPttRecordingComplete,
+  disabled = false,
+}: MicIndicatorProps) {
+  const latestGroupIndexRef = useRef(activationBlockGroupIndex);
+  useEffect(() => {
+    latestGroupIndexRef.current = activationBlockGroupIndex;
+  }, [activationBlockGroupIndex]);
+
+  const blockIndexAtActivationRef = useRef(activationBlockGroupIndex);
+
+  const micOpts = useMemo(
+    () =>
+      onPttRecordingComplete && !disabled
+        ? {
+            onRecording: (blob: Blob) => {
+              void onPttRecordingComplete(
+                blockIndexAtActivationRef.current,
+                blob,
+              );
+            },
+          }
+        : {},
+    [onPttRecordingComplete, disabled],
+  );
+
   const { isActive, isStarting, level, error, start, stop } =
-    useMicrophoneLevel();
+    useMicrophoneLevel(micOpts);
 
   // Track every input that is currently asking for the mic to be live.
   // The mic stays open until *all* sources are released.
   const heldSources = useRef<Set<PressSource>>(new Set());
 
+  useEffect(() => {
+    if (!disabled) return;
+    heldSources.current.clear();
+    stop();
+  }, [disabled, stop]);
+
   const press = useCallback(
     (source: PressSource) => {
+      if (disabled) return;
       if (heldSources.current.has(source)) return;
       heldSources.current.add(source);
+      blockIndexAtActivationRef.current = latestGroupIndexRef.current;
       void start();
     },
-    [start],
+    [disabled, start],
   );
 
   const release = useCallback(
@@ -46,6 +93,7 @@ export default function MicIndicator() {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
+      if (disabled) return;
       if (e.code !== PTT_KEY_CODE) return;
       if (isTypingTarget(e.target)) return;
       // Suppress key auto-repeat — we only care about the initial press.
@@ -55,6 +103,7 @@ export default function MicIndicator() {
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
+      if (disabled) return;
       if (e.code !== PTT_KEY_CODE) return;
       if (!heldSources.current.has("key")) return;
       e.preventDefault();
@@ -75,9 +124,10 @@ export default function MicIndicator() {
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onWindowBlur);
     };
-  }, [press, release, stop]);
+  }, [disabled, press, release, stop]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (disabled) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     press("pointer");
@@ -138,6 +188,7 @@ export default function MicIndicator() {
       </div>
       <button
         type="button"
+        disabled={disabled}
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
@@ -146,11 +197,13 @@ export default function MicIndicator() {
         aria-keyshortcuts="`"
         aria-label="Push to talk (hold tilde or this button)"
         className={`relative w-9 h-9 flex items-center justify-center rounded-full border transition-colors select-none touch-none ${
-          isActive
-            ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
-            : isStarting
-              ? "border-[var(--accent)] text-[var(--accent)]"
-              : "border-[var(--border)] text-[#cfcfd6] hover:text-white hover:border-[#3a3a41]"
+          disabled
+            ? "border-[var(--border)] text-[#4a4a52] opacity-40 cursor-not-allowed"
+            : isActive
+              ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
+              : isStarting
+                ? "border-[var(--accent)] text-[var(--accent)]"
+                : "border-[var(--border)] text-[#cfcfd6] hover:text-white hover:border-[#3a3a41]"
         }`}
       >
         {isActive ? (

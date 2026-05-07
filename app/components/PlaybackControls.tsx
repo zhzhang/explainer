@@ -10,6 +10,10 @@ interface PlaybackControlsProps {
   groupStarts: number[];
   currentSubIndex: number;
   onSubIndexChange: (index: number) => void;
+  /** Block index at PTT activation + recorded audio after release. */
+  onPttRecording?: (blockIndex: number, blob: Blob) => void | Promise<void>;
+  /** Disable PTT while long-running work is in flight. */
+  pttDisabled?: boolean;
 }
 
 /**
@@ -17,6 +21,10 @@ interface PlaybackControlsProps {
  * (rather than a server action) so audio requests aren't queued behind the
  * long-running `invokeClaude` server action while generation is in flight.
  */
+function isUserTurn(sub: ExplainerSubBlock | undefined): boolean {
+  return sub?.turn === "user";
+}
+
 async function fetchAudioBlobUrl(text: string): Promise<string> {
   const res = await fetch("/api/tts", {
     method: "POST",
@@ -42,6 +50,8 @@ export default function PlaybackControls({
   groupStarts,
   currentSubIndex,
   onSubIndexChange,
+  onPttRecording,
+  pttDisabled = false,
 }: PlaybackControlsProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -51,6 +61,16 @@ export default function PlaybackControls({
   const [error, setError] = useState<string | null>(null);
   const audioCache = useRef<Map<number, string>>(new Map());
   const wantToPlay = useRef(false);
+  const prevSubCountRef = useRef(subBlocks.length);
+
+  useEffect(() => {
+    if (prevSubCountRef.current === subBlocks.length) return;
+    prevSubCountRef.current = subBlocks.length;
+    for (const url of audioCache.current.values()) {
+      URL.revokeObjectURL(url);
+    }
+    audioCache.current.clear();
+  }, [subBlocks.length]);
 
   // Polling re-creates `groups`/`subBlocks` every cycle, so we mirror the
   // latest sub-blocks into a ref. Reading through the ref keeps the audio
@@ -77,10 +97,26 @@ export default function PlaybackControls({
     totalSubs > 0 ? currentSubIndex - (groupStarts[groupIndex] ?? 0) : 0;
   const subsInCurrentGroup = groups[groupIndex]?.length ?? 0;
 
+  /** Keep playhead off `turn: user` sub-blocks (no TTS). */
+  useEffect(() => {
+    if (totalSubs === 0) return;
+    const sub = subBlocks[currentSubIndex];
+    if (!isUserTurn(sub)) return;
+    let n = currentSubIndex + 1;
+    while (n < totalSubs && isUserTurn(subBlocks[n])) n++;
+    if (n < totalSubs) {
+      onSubIndexChange(n);
+      return;
+    }
+    let p = currentSubIndex - 1;
+    while (p >= 0 && isUserTurn(subBlocks[p])) p--;
+    if (p >= 0) onSubIndexChange(p);
+  }, [currentSubIndex, subBlocks, totalSubs, onSubIndexChange]);
+
   const prefetchAudio = useCallback(
     async (index: number): Promise<string | null> => {
       const block = subBlocksRef.current[index];
-      if (!block) return null;
+      if (!block || isUserTurn(block)) return null;
       const cached = audioCache.current.get(index);
       if (cached) return cached;
       try {
@@ -99,7 +135,7 @@ export default function PlaybackControls({
       const cached = audioCache.current.get(index);
       if (cached) return cached;
       const block = subBlocksRef.current[index];
-      if (!block) return null;
+      if (!block || isUserTurn(block)) return null;
       setIsLoading(true);
       setError(null);
       try {
@@ -147,8 +183,11 @@ export default function PlaybackControls({
         } catch {
         }
       }
-      if (subBlocksRef.current[currentSubIndex + 1]) {
-        void prefetchAudio(currentSubIndex + 1);
+      let next = currentSubIndex + 1;
+      const subs = subBlocksRef.current;
+      while (next < subs.length && isUserTurn(subs[next])) next++;
+      if (subs[next]) {
+        void prefetchAudio(next);
       }
     })();
 
@@ -164,9 +203,12 @@ export default function PlaybackControls({
     const onMeta = () => setDuration(audio.duration || 0);
     const onEnd = () => {
       setIsPlaying(false);
-      if (currentSubIndex < totalSubs - 1) {
+      const subs = subBlocksRef.current;
+      let next = currentSubIndex + 1;
+      while (next < subs.length && isUserTurn(subs[next])) next++;
+      if (next < subs.length) {
         wantToPlay.current = true;
-        onSubIndexChange(currentSubIndex + 1);
+        onSubIndexChange(next);
       }
     };
     const onPlay = () => setIsPlaying(true);
@@ -210,18 +252,20 @@ export default function PlaybackControls({
   }, [currentSubIndex, loadAudio]);
 
   const goPrev = useCallback(() => {
-    if (currentSubIndex > 0) {
-      wantToPlay.current = isPlaying;
-      onSubIndexChange(currentSubIndex - 1);
-    }
-  }, [currentSubIndex, isPlaying, onSubIndexChange]);
+    if (currentSubIndex <= 0) return;
+    wantToPlay.current = isPlaying;
+    let p = currentSubIndex - 1;
+    while (p >= 0 && isUserTurn(subBlocks[p])) p--;
+    if (p >= 0) onSubIndexChange(p);
+  }, [currentSubIndex, isPlaying, onSubIndexChange, subBlocks]);
 
   const goNext = useCallback(() => {
-    if (currentSubIndex < totalSubs - 1) {
-      wantToPlay.current = isPlaying;
-      onSubIndexChange(currentSubIndex + 1);
-    }
-  }, [currentSubIndex, totalSubs, isPlaying, onSubIndexChange]);
+    if (currentSubIndex >= totalSubs - 1) return;
+    wantToPlay.current = isPlaying;
+    let n = currentSubIndex + 1;
+    while (n < totalSubs && isUserTurn(subBlocks[n])) n++;
+    if (n < totalSubs) onSubIndexChange(n);
+  }, [currentSubIndex, totalSubs, isPlaying, onSubIndexChange, subBlocks]);
 
   const replay = useCallback(() => {
     const audio = audioRef.current;
@@ -404,7 +448,11 @@ export default function PlaybackControls({
             })}
           </div>
           <div className="h-6 w-px bg-[var(--border)]" aria-hidden="true" />
-          <MicIndicator />
+          <MicIndicator
+            activationBlockGroupIndex={groupIndex}
+            onPttRecordingComplete={onPttRecording}
+            disabled={pttDisabled}
+          />
         </div>
       </div>
     </div>

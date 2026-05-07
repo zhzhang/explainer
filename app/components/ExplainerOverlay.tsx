@@ -128,6 +128,24 @@ export default function ExplainerOverlay({
         <div className="space-y-2">
           {group.map((sub, i) => {
             const isActive = i === activeSubIndexInGroup;
+            const isUserTurn = sub.turn === "user";
+            if (isUserTurn) {
+              return (
+                <div
+                  key={`user-${sub.file}-${sub.line_start}-${i}`}
+                  className={`rounded-lg border border-[#3a3a52] bg-[#141418] px-3 py-2.5 ${
+                    isActive ? "ring-1 ring-[var(--accent-dim)]" : "opacity-80"
+                  }`}
+                >
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] mb-1">
+                    You asked
+                  </div>
+                  <p className="text-sm leading-relaxed text-[#e8e8ee]/90 italic">
+                    {sub.text}
+                  </p>
+                </div>
+              );
+            }
             return (
               <p
                 key={`${sub.file}-${sub.line_start}-${i}`}

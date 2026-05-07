@@ -6,6 +6,7 @@ import type {
   ClaudeAttempt,
   DiffResult,
   ExplainerBlock,
+  InvokeClaudeClarificationResult,
   InvokeClaudeResult,
 } from "./types";
 import {
@@ -224,6 +225,118 @@ After fixing, save explainer.yaml at the repo root and respond with one line: "F
 
   return {
     forkedSessionId: activeSessionId,
+    attempts,
+    validated: true,
+    totalDurationMs: Date.now() - overallStart,
+  };
+}
+
+function buildClarificationPrompt(
+  blockIndex: number,
+  userTranscript: string,
+): string {
+  const quoted = JSON.stringify(userTranscript);
+  return `Update explainer.yaml for a **voice clarification** from the diff-explainer listener.
+
+User transcript (verbatim JSON string, may include punctuation you should preserve in YAML text):
+${quoted}
+
+They pressed push-to-talk while listening to the narrative **block at outer list index ${blockIndex}** (0-based: the first YAML outer list item is index 0).
+
+Follow the /explainer skill schema: a YAML **list of lists**. Each outer item is one block; each inner item is a sub-block with file, part ("before" or "after", default "after"), turn ("user" or "agent", default "agent"), line_start, col_start, line_end, col_end, text.
+
+TASK:
+1. Read explainer.yaml at the repo root.
+2. Locate the inner list at outer index ${blockIndex}. **Append only to that inner list** — do not insert a new outer block.
+3. Append **one** sub-block with \`turn: user\`. Set \`text\` to the user's question (you may lightly normalize wording; keep meaning). Copy **file**, **part** (default after if missing in the template you mirror), **line_start**, **col_start**, **line_end**, **col_end** from the **last sub-block already in that block before your edit** so the UI keeps the same code anchor.
+4. Immediately underneath, append **one or more** sub-blocks with \`turn: agent\` (or omit \`turn\` so it defaults to agent) that answer the question using correct line ranges and part:before / part:after rules from the skill.
+5. Rewrite the **entire** explainer.yaml from scratch so it is always valid YAML. All other blocks must be unchanged except this one block, which only grows at the end.
+6. Print a single-line confirmation such as: Clarification appended to block ${blockIndex + 1}.
+
+Do **not** use --fork-session (this resume continues the same session). Do not paste the full YAML body in your final message.`;
+}
+
+export async function invokeClaudeClarification(
+  repoPath: string,
+  sessionId: string,
+  blockIndex: number,
+  userTranscript: string,
+): Promise<InvokeClaudeClarificationResult> {
+  const cwd = await assertRepoPath(repoPath);
+  if (!sessionId || typeof sessionId !== "string") {
+    throw new Error("sessionId is required");
+  }
+  if (!userTranscript?.trim()) {
+    throw new Error("userTranscript is required");
+  }
+  if (!Number.isInteger(blockIndex) || blockIndex < 0) {
+    throw new Error("blockIndex must be a non-negative integer");
+  }
+
+  const overallStart = Date.now();
+  const attempts: ClaudeAttempt[] = [];
+
+  const initialPrompt = buildClarificationPrompt(blockIndex, userTranscript.trim());
+  const initial = await runClaude(cwd, initialPrompt, sessionId, false);
+  let activeSessionId = initial.forkedSessionId ?? sessionId;
+
+  const initialDiff = await getDiff(repoPath);
+  let validation = await readAndValidateExplainer(
+    repoPath,
+    initialDiff.rawDiff,
+  );
+
+  attempts.push({
+    attempt: 1,
+    output: initial.output,
+    validationIssues: validation.ok
+      ? []
+      : validation.issues.map((iss) => formatIssuesForClaude([iss])),
+    durationMs: initial.durationMs,
+  });
+
+  let retryCount = 0;
+  while (!validation.ok && retryCount < MAX_VALIDATION_RETRIES) {
+    retryCount++;
+    const issuesText = formatIssuesForClaude(validation.issues);
+
+    const retryPrompt = `The explainer.yaml update for the voice clarification failed validation. Re-read explainer.yaml, fix every issue, and overwrite the file.
+
+Validation errors (attempt ${retryCount} of ${MAX_VALIDATION_RETRIES}):
+${issuesText}
+
+Reminders:
+- Schema is a list of lists; only block index ${blockIndex} (0-based) should have gained new trailing sub-blocks: first \`turn: user\` (mirroring the prior last sub-block's file/part/lines), then one or more agent sub-blocks answering the question.
+- turn: user sub-blocks are never read aloud by the app; they only display the user's question.
+
+After fixing, save explainer.yaml and respond with one line: "Fixed explainer.yaml clarification (attempt ${retryCount})".`;
+
+    const retry = await runClaude(cwd, retryPrompt, activeSessionId, false);
+    if (retry.forkedSessionId) activeSessionId = retry.forkedSessionId;
+
+    const diffNow = await getDiff(repoPath);
+    validation = await readAndValidateExplainer(repoPath, diffNow.rawDiff);
+
+    attempts.push({
+      attempt: retryCount + 1,
+      output: retry.output,
+      validationIssues: validation.ok
+        ? []
+        : validation.issues.map((iss) => formatIssuesForClaude([iss])),
+      durationMs: retry.durationMs,
+    });
+  }
+
+  if (!validation.ok) {
+    const finalIssues = formatIssuesForClaude(validation.issues);
+    throw new Error(
+      `Claude could not apply a valid clarification after ${attempts.length} attempts.\n\nFinal validation errors:\n${finalIssues}`,
+    );
+  }
+
+  return {
+    forkedSessionId: activeSessionId,
+    blocks: validation.blocks,
     attempts,
     validated: true,
     totalDurationMs: Date.now() - overallStart,

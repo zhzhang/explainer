@@ -6,10 +6,15 @@
  */
 export type ExplainerPart = "before" | "after";
 
+/** Who is speaking in this sub-block; the player skips `user` (no TTS). */
+export type ExplainerTurn = "user" | "agent";
+
 /** One TTS segment + code range; several sub-blocks form one on-screen "block". */
 export interface ExplainerSubBlock {
   file: string;
   part: ExplainerPart;
+  /** Defaults to `agent` when omitted (YAML / Zod default). */
+  turn?: ExplainerTurn;
   line_start: number;
   col_start: number;
   line_end: number;
@@ -29,6 +34,14 @@ export interface ClaudeAttempt {
 
 export interface InvokeClaudeResult {
   forkedSessionId: string | null;
+  attempts: ClaudeAttempt[];
+  validated: boolean;
+  totalDurationMs: number;
+}
+
+export interface InvokeClaudeClarificationResult {
+  forkedSessionId: string | null;
+  blocks: ExplainerBlock[];
   attempts: ClaudeAttempt[];
   validated: boolean;
   totalDurationMs: number;

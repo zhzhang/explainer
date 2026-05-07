@@ -10,7 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { invokeClaude } from "../actions";
+import { invokeClaude, invokeClaudeClarification } from "../actions";
 import DiffViewer from "../components/DiffViewer";
 import PlaybackControls from "../components/PlaybackControls";
 import ExplainerOverlay from "../components/ExplainerOverlay";
@@ -32,6 +32,17 @@ type ExplainerSnapshot = {
  * keep firing while `invokeClaude` is in flight and the viewer can stream
  * blocks in as Claude writes them.
  */
+function flatSubIndexForGroupStart(
+  blocks: ExplainerBlock[],
+  groupIndex: number,
+): number {
+  let acc = 0;
+  for (let k = 0; k < groupIndex; k++) {
+    acc += blocks[k]?.length ?? 0;
+  }
+  return acc;
+}
+
 async function fetchExplainerSnapshot(
   repo: string,
 ): Promise<ExplainerSnapshot> {
@@ -76,6 +87,9 @@ export default function ViewerClient({
   const [generating, setGenerating] = useState(pendingGeneration);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [liveFork, setLiveFork] = useState<string | null>(fork || null);
+  const [clarifying, setClarifying] = useState(false);
+  const [clarifyError, setClarifyError] = useState<string | null>(null);
+  const clarifyInFlightRef = useRef(false);
 
   const subBlocks = useMemo(() => groups.flat(), [groups]);
   const groupStarts = useMemo(() => {
@@ -186,6 +200,83 @@ export default function ViewerClient({
     });
   }, [repo, liveFork, router]);
 
+  const handlePttRecording = useCallback(
+    async (blockIndex: number, blob: Blob) => {
+      if (clarifyInFlightRef.current) return;
+      const sessionId = (liveFork ?? fork)?.trim();
+      if (!sessionId) {
+        setClarifyError(
+          "Voice Q&A needs a Claude session. Use Re-generate once so the URL includes a fork id, or open the viewer from Generate explainer.",
+        );
+        return;
+      }
+      const group = groups[blockIndex];
+      if (!group?.length) {
+        setClarifyError("No explainer block at that index.");
+        return;
+      }
+
+      setClarifyError(null);
+      setClarifying(true);
+      clarifyInFlightRef.current = true;
+      const beforeLen = group.length;
+
+      try {
+        const fd = new FormData();
+        fd.set("audio", blob, "ptt.webm");
+        const sttRes = await fetch("/api/stt", {
+          method: "POST",
+          body: fd,
+          cache: "no-store",
+        });
+        if (!sttRes.ok) {
+          let message = `STT failed (${sttRes.status})`;
+          try {
+            const data = (await sttRes.json()) as { error?: string };
+            if (data?.error) message = data.error;
+          } catch {}
+          throw new Error(message);
+        }
+        const { transcript } = (await sttRes.json()) as { transcript: string };
+
+        const result = await invokeClaudeClarification(
+          repo,
+          sessionId,
+          blockIndex,
+          transcript,
+        );
+
+        if (result.forkedSessionId) {
+          setLiveFork(result.forkedSessionId);
+          const params = new URLSearchParams({ repo });
+          params.set("fork", result.forkedSessionId);
+          router.replace(`/viewer?${params.toString()}`);
+        }
+
+        setGroups(result.blocks);
+
+        const updated = result.blocks[blockIndex];
+        if (updated?.length) {
+          let i = beforeLen;
+          while (i < updated.length && updated[i]?.turn === "user") {
+            i++;
+          }
+          if (i < updated.length) {
+            setCurrentSubIndex(
+              flatSubIndexForGroupStart(result.blocks, blockIndex) + i,
+            );
+          }
+        }
+      } catch (err) {
+        setClarifyError((err as Error).message);
+      } finally {
+        clarifyInFlightRef.current = false;
+        setClarifying(false);
+      }
+    },
+    [repo, liveFork, fork, groups, router],
+  );
+
   const parsedFiles = useMemo(() => parseDiffToSideBySide(rawDiff), [rawDiff]);
 
   const activeKind = useMemo(() => {
@@ -216,6 +307,12 @@ export default function ViewerClient({
               Generating…
             </span>
           ) : null}
+          {clarifying ? (
+            <span className="text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-[var(--highlight)] text-[var(--highlight)] flex items-center gap-1.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[var(--highlight)] animate-pulse" />
+              Clarifying…
+            </span>
+          ) : null}
           {liveFork ? (
             <span className="text-[10px] uppercase tracking-wider text-[var(--muted)] font-mono">
               fork: {liveFork.slice(0, 8)}
@@ -244,6 +341,12 @@ export default function ViewerClient({
         </div>
       ) : null}
 
+      {clarifyError ? (
+        <div className="px-6 py-2 text-xs text-[var(--del-fg)] bg-[#2a1414] border-b border-[#4d1f1f] font-mono whitespace-pre-wrap">
+          {clarifyError}
+        </div>
+      ) : null}
+
       <main className="flex-1 overflow-y-auto pb-32 scrollbar-slim">
         <DiffViewer rawDiff={rawDiff} activeSubBlock={activeSubBlock} />
       </main>
@@ -263,6 +366,8 @@ export default function ViewerClient({
         groupStarts={groupStarts}
         currentSubIndex={currentSubIndex}
         onSubIndexChange={setCurrentSubIndex}
+        onPttRecording={handlePttRecording}
+        pttDisabled={clarifying || generating}
       />
     </div>
   );
