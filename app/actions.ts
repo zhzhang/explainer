@@ -21,8 +21,7 @@ import { ttsCache } from "./lib/ttsCache";
 const execFileAsync = promisify(execFile);
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "claude";
-const DEFAULT_VOICE_ID =
-  process.env.ELEVENLABS_VOICE_ID ?? "21m00Tcm4TlvDq8ikWAM";
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 const DEFAULT_MODEL_ID = "eleven_flash_v2_5";
 const MAX_VALIDATION_RETRIES = 3;
 
@@ -81,8 +80,7 @@ export async function getDiff(repoPath: string): Promise<DiffResult> {
         { cwd, maxBuffer: 64 * 1024 * 1024 },
       );
       rawDiff = stdout;
-    } catch {
-    }
+    } catch {}
   }
 
   return { rawDiff, hasChanges: rawDiff.trim().length > 0 };
@@ -145,8 +143,7 @@ async function runClaude(
         : typeof parsed.response === "string"
           ? parsed.response
           : stdout;
-  } catch {
-  }
+  } catch {}
 
   return {
     forkedSessionId,
@@ -174,7 +171,10 @@ export async function invokeClaude(
   let activeSessionId = initial.forkedSessionId ?? sessionId;
 
   const initialDiff = await getDiff(repoPath);
-  let validation = await readAndValidateExplainer(repoPath, initialDiff.rawDiff);
+  let validation = await readAndValidateExplainer(
+    repoPath,
+    initialDiff.rawDiff,
+  );
 
   attempts.push({
     attempt: 1,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { synthesizeSpeech } from "../actions";
 import type { ExplainerBlock } from "../types";
+import MicIndicator from "./MicIndicator";
 
 interface PlaybackControlsProps {
   blocks: ExplainerBlock[];
@@ -324,25 +325,29 @@ export default function PlaybackControls({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-1.5">
-          {blocks.map((_, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => {
-                wantToPlay.current = isPlaying;
-                onIndexChange(i);
-              }}
-              aria-label={`Jump to block ${i + 1}`}
-              className={`w-2 h-2 rounded-full transition-all ${
-                i === currentIndex
-                  ? "bg-[var(--accent)] w-6"
-                  : i < currentIndex
-                    ? "bg-[#4a4a52]"
-                    : "bg-[#2a2a31] hover:bg-[#3a3a41]"
-              }`}
-            />
-          ))}
+        <div className="flex items-center justify-end gap-4">
+          <div className="flex items-center gap-1.5">
+            {blocks.map((_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  wantToPlay.current = isPlaying;
+                  onIndexChange(i);
+                }}
+                aria-label={`Jump to block ${i + 1}`}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  i === currentIndex
+                    ? "bg-[var(--accent)] w-6"
+                    : i < currentIndex
+                      ? "bg-[#4a4a52]"
+                      : "bg-[#2a2a31] hover:bg-[#3a3a41]"
+                }`}
+              />
+            ))}
+          </div>
+          <div className="h-6 w-px bg-[var(--border)]" aria-hidden="true" />
+          <MicIndicator />
         </div>
       </div>
     </div>
