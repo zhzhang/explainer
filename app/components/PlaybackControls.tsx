@@ -52,6 +52,15 @@ export default function PlaybackControls({
   const audioCache = useRef<Map<number, string>>(new Map());
   const wantToPlay = useRef(false);
 
+  // Polling re-creates `groups`/`subBlocks` every cycle, so we mirror the
+  // latest sub-blocks into a ref. Reading through the ref keeps the audio
+  // loading effect's deps tiny and prevents poll-driven re-renders from
+  // restarting playback from 0:00.
+  const subBlocksRef = useRef(subBlocks);
+  useEffect(() => {
+    subBlocksRef.current = subBlocks;
+  }, [subBlocks]);
+
   const totalSubs = subBlocks.length;
   const currentBlock = subBlocks[currentSubIndex];
 
@@ -70,7 +79,7 @@ export default function PlaybackControls({
 
   const prefetchAudio = useCallback(
     async (index: number): Promise<string | null> => {
-      const block = subBlocks[index];
+      const block = subBlocksRef.current[index];
       if (!block) return null;
       const cached = audioCache.current.get(index);
       if (cached) return cached;
@@ -82,14 +91,14 @@ export default function PlaybackControls({
         return null;
       }
     },
-    [subBlocks],
+    [],
   );
 
   const loadAudio = useCallback(
     async (index: number): Promise<string | null> => {
       const cached = audioCache.current.get(index);
       if (cached) return cached;
-      const block = subBlocks[index];
+      const block = subBlocksRef.current[index];
       if (!block) return null;
       setIsLoading(true);
       setError(null);
@@ -104,7 +113,7 @@ export default function PlaybackControls({
         setIsLoading(false);
       }
     },
-    [subBlocks],
+    [],
   );
 
   useEffect(() => {
@@ -118,10 +127,11 @@ export default function PlaybackControls({
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
     const audio = audioRef.current;
-    if (!audio || !currentBlock) return;
+    if (!audio) return;
+    if (!subBlocksRef.current[currentSubIndex]) return;
 
+    let cancelled = false;
     audio.pause();
     setProgress(0);
     setDuration(0);
@@ -137,7 +147,7 @@ export default function PlaybackControls({
         } catch {
         }
       }
-      if (subBlocks[currentSubIndex + 1]) {
+      if (subBlocksRef.current[currentSubIndex + 1]) {
         void prefetchAudio(currentSubIndex + 1);
       }
     })();
@@ -145,7 +155,7 @@ export default function PlaybackControls({
     return () => {
       cancelled = true;
     };
-  }, [currentSubIndex, currentBlock, subBlocks, loadAudio, prefetchAudio]);
+  }, [currentSubIndex, loadAudio, prefetchAudio]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -177,7 +187,8 @@ export default function PlaybackControls({
 
   const togglePlay = useCallback(async () => {
     const audio = audioRef.current;
-    if (!audio || !currentBlock) return;
+    if (!audio) return;
+    if (!subBlocksRef.current[currentSubIndex]) return;
     if (audio.paused) {
       wantToPlay.current = true;
       if (!audio.src) {
@@ -196,7 +207,7 @@ export default function PlaybackControls({
       wantToPlay.current = false;
       audio.pause();
     }
-  }, [currentBlock, currentSubIndex, loadAudio]);
+  }, [currentSubIndex, loadAudio]);
 
   const goPrev = useCallback(() => {
     if (currentSubIndex > 0) {

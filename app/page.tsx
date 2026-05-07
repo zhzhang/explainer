@@ -1,13 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LandingPage() {
   const router = useRouter();
+  const didResetOnMount = useRef(false);
   const [repoPath, setRepoPath] = useState("");
   const [sessionId, setSessionId] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (didResetOnMount.current) return;
+    didResetOnMount.current = true;
+    const lastRepoPath =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("diff-explainer:last-repo") ?? undefined
+        : undefined;
+    void fetch("/api/reset", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repoPath: lastRepoPath }),
+    });
+  }, []);
 
   function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -23,6 +39,7 @@ export default function LandingPage() {
       generate: "1",
       sessionId: session,
     });
+    window.localStorage.setItem("diff-explainer:last-repo", repo);
     router.push(`/viewer?${params.toString()}`);
   }
 
@@ -31,7 +48,9 @@ export default function LandingPage() {
       setError("Enter a repo path first");
       return;
     }
-    const params = new URLSearchParams({ repo: repoPath.trim() });
+    const repo = repoPath.trim();
+    window.localStorage.setItem("diff-explainer:last-repo", repo);
+    const params = new URLSearchParams({ repo });
     router.push(`/viewer?${params.toString()}`);
   }
 

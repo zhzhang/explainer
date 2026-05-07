@@ -9,6 +9,7 @@ import { z } from "zod";
  *   removed or replaced and explain why it was there.
  */
 export const explainerPartSchema = z.enum(["before", "after"]);
+export const explainerTurnSchema = z.enum(["user", "agent"]);
 
 export const explainerSubBlockSchema = z
   .object({
@@ -19,6 +20,7 @@ export const explainerSubBlockSchema = z
         message: "must be a repo-relative path (no leading slash or drive)",
       }),
     part: explainerPartSchema.default("after"),
+    turn: explainerTurnSchema.default("agent"),
     line_start: z.coerce.number().int().min(1, "must be >= 1"),
     col_start: z.coerce.number().int().min(1, "must be >= 1").default(1),
     line_end: z.coerce.number().int().min(1, "must be >= 1"),
