@@ -15,6 +15,8 @@ interface MicIndicatorProps {
   ) => void | Promise<void>;
   /** When true, PTT is ignored (e.g. long-running clarification). */
   disabled?: boolean;
+  /** Spinner to the right of the hotkey while STT / Claude clarification runs. */
+  clarificationLoading?: boolean;
 }
 
 // The "tilde" key — same physical key as backtick on US keyboards. Using
@@ -27,6 +29,7 @@ export default function MicIndicator({
   activationBlockGroupIndex,
   onPttRecordingComplete,
   disabled = false,
+  clarificationLoading = false,
 }: MicIndicatorProps) {
   const latestGroupIndexRef = useRef(activationBlockGroupIndex);
   useEffect(() => {
@@ -161,7 +164,11 @@ export default function MicIndicator({
         : "Hold ` (tilde) or this button to talk";
 
   return (
-    <div className="flex items-center gap-2" title={buttonTitle}>
+    <div
+      className="flex items-center gap-2"
+      title={buttonTitle}
+      aria-busy={clarificationLoading ? true : undefined}
+    >
       <div
         className="flex items-end gap-[2px] h-5 w-7"
         aria-hidden="true"
@@ -251,6 +258,28 @@ export default function MicIndicator({
       >
         `
       </kbd>
+      {clarificationLoading ? (
+        <span
+          className="flex items-center shrink-0 text-[var(--accent)]"
+          role="status"
+          aria-label="Processing your question"
+          title="Processing your question…"
+        >
+          <svg
+            className="animate-spin"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12a9 9 0 1 1-6.2-8.55" />
+          </svg>
+        </span>
+      ) : null}
     </div>
   );
 }

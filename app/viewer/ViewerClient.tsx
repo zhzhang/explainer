@@ -368,6 +368,7 @@ export default function ViewerClient({
         onSubIndexChange={setCurrentSubIndex}
         onPttRecording={handlePttRecording}
         pttDisabled={clarifying || generating}
+        pttClarificationLoading={clarifying}
       />
     </div>
   );

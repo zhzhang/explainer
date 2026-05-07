@@ -14,6 +14,8 @@ interface PlaybackControlsProps {
   onPttRecording?: (blockIndex: number, blob: Blob) => void | Promise<void>;
   /** Disable PTT while long-running work is in flight. */
   pttDisabled?: boolean;
+  /** Show a spinner after the PTT hotkey while a voice clarification is in progress. */
+  pttClarificationLoading?: boolean;
 }
 
 /**
@@ -52,6 +54,7 @@ export default function PlaybackControls({
   onSubIndexChange,
   onPttRecording,
   pttDisabled = false,
+  pttClarificationLoading = false,
 }: PlaybackControlsProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -452,6 +455,7 @@ export default function PlaybackControls({
             activationBlockGroupIndex={groupIndex}
             onPttRecordingComplete={onPttRecording}
             disabled={pttDisabled}
+            clarificationLoading={pttClarificationLoading}
           />
         </div>
       </div>
